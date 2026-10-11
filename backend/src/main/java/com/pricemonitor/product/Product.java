@@ -3,6 +3,8 @@ package com.pricemonitor.product;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -61,6 +63,12 @@ public class Product {
 
     private Instant lastCheckedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private Availability availability = Availability.UNKNOWN;
+
+    private Instant availabilityCheckedAt;
+
     @Size(max = 500)
     @Column(length = 500)
     private String lastCheckError;
@@ -94,8 +102,18 @@ public class Product {
         lastCheckError = null;
     }
 
+    public void setAvailability(Availability availability) {
+        this.availability = availability == null ? Availability.UNKNOWN : availability;
+        this.availabilityCheckedAt = Instant.now();
+    }
+
+    public void markChecking() {
+        this.availability = Availability.CHECKING;
+    }
+
     public void failedCheck(String message) {
         lastCheckedAt = Instant.now();
+        if (availability == Availability.CHECKING) setAvailability(Availability.UNKNOWN);
         lastCheckError = message == null ? "Price could not be read from this page." : message.substring(0, Math.min(message.length(), 500));
     }
 
@@ -111,6 +129,8 @@ public class Product {
     public void setActive(boolean active) { this.active = active; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getLastCheckedAt() { return lastCheckedAt; }
+    public Availability getAvailability() { return availability == null ? Availability.UNKNOWN : availability; }
+    public Instant getAvailabilityCheckedAt() { return availabilityCheckedAt; }
     public String getLastCheckError() { return lastCheckError; }
     public List<PriceSnapshot> getSnapshots() { return snapshots; }
 }

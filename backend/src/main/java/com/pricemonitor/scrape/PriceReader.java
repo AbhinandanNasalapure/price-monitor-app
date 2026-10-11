@@ -1,5 +1,6 @@
 package com.pricemonitor.scrape;
 
+import com.pricemonitor.product.Availability;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import com.microsoft.playwright.Browser;
@@ -41,6 +42,17 @@ public class PriceReader {
             "#price_inside_buybox",
             "#newBuyBoxPrice"
     );
+    private static final List<String> AVAILABILITY_SELECTORS = List.of(
+            "#availability",
+            "#outOfStock",
+            "[data-testid*='availability']",
+            "[data-testid*='stock']",
+            "[class*='out-of-stock']",
+            "[class*='outOfStock']",
+            "[class*='soldOut']",
+            "[class*='availability']",
+            "[class*='Availability']"
+    );
 
     private final ObjectMapper objectMapper;
     private final int timeoutMs;
@@ -66,9 +78,13 @@ public class PriceReader {
                 }
 
                 String image = readMeta(page, "meta[property='og:image']", "content");
+                Availability availability = readAvailability(page);
                 BigDecimal amount = customSelector == null ? null : parseNumber(readSelector(page, customSelector));
                 boolean amazon = isAmazonHost(productUrl);
                 if (amount == null && amazon) amount = readFirstPrice(page, AMAZON_PRICE_SELECTORS);
+                if (amount == null && availability != Availability.UNKNOWN) {
+                    return new PriceReading(null, readCurrency(page), image, availability);
+                }
                 if (amount == null && amazon) {
                     throw new IllegalStateException("Amazon did not expose a current buy-box price for this product. No fallback price was used to avoid recording a list price or another page value.");
                 }
@@ -86,7 +102,7 @@ public class PriceReader {
                     throw new IllegalStateException("No price was found. Try adding a CSS price selector for this page.");
                 }
                 String currency = readCurrency(page);
-                return new PriceReading(amount, currency, image);
+                return new PriceReading(amount, currency, image, availability);
             } finally {
                 browser.close();
             }
@@ -207,6 +223,31 @@ public class PriceReader {
             if (amount != null && amount.signum() > 0) return amount;
         }
         return null;
+    }
+
+    private Availability readAvailability(Page page) {
+        for (String selector : AVAILABILITY_SELECTORS) {
+            Availability found = classifyAvailability(readSelector(page, selector));
+            if (found != Availability.UNKNOWN) return found;
+        }
+        try {
+            String body = page.locator("body").innerText();
+            return classifyAvailability(body.substring(0, Math.min(body.length(), 6000)));
+        } catch (RuntimeException ignored) {
+            return Availability.UNKNOWN;
+        }
+    }
+
+    private Availability classifyAvailability(String text) {
+        if (text == null || text.isBlank()) return Availability.UNKNOWN;
+        String normalized = text.toLowerCase(Locale.ROOT);
+        if (normalized.contains("currently unavailable") || normalized.contains("out of stock")
+                || normalized.contains("sold out") || normalized.contains("not available")
+                || normalized.contains("temporarily unavailable")) return Availability.OUT_OF_STOCK;
+        if (normalized.contains("in stock") || normalized.contains("available for delivery")
+                || normalized.contains("available now") || normalized.contains("add to basket")
+                || normalized.contains("add to cart")) return Availability.IN_STOCK;
+        return Availability.UNKNOWN;
     }
 
     private boolean isAmazonHost(String productUrl) {

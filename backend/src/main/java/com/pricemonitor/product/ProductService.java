@@ -1,8 +1,5 @@
 package com.pricemonitor.product;
 
-import com.pricemonitor.scrape.PriceReader;
-import com.pricemonitor.scrape.PriceReading;
-import com.pricemonitor.push.PushService;
 import org.springframework.http.HttpStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,15 +14,12 @@ import java.util.List;
 @Service
 public class ProductService {
     private static final Logger log = LoggerFactory.getLogger(ProductService.class);
-
     private final ProductRepository products;
-    private final PriceReader priceReader;
-    private final PushService pushService;
+    private final ProductCheckWorker checkWorker;
 
-    public ProductService(ProductRepository products, PriceReader priceReader, PushService pushService) {
+    public ProductService(ProductRepository products, ProductCheckWorker checkWorker) {
         this.products = products;
-        this.priceReader = priceReader;
-        this.pushService = pushService;
+        this.checkWorker = checkWorker;
     }
 
     @Transactional(readOnly = true)
@@ -41,9 +35,11 @@ public class ProductService {
     public ProductResponse create(ProductRequest request) {
         validatePublicUrl(request.url());
         log.info("Creating price monitor name='{}', host={}, target={} {}", request.name(), hostOf(request.url()), request.targetPrice(), request.currency());
-        Product product = products.save(new Product(request.name(), request.url(), request.targetPrice(), request.currency(), request.priceSelector()));
-        checkAndSave(product);
-        return ProductResponse.from(products.findWithSnapshotsById(product.getId()).orElse(product));
+        Product product = new Product(request.name(), request.url(), request.targetPrice(), request.currency(), request.priceSelector());
+        product.markChecking();
+        product = products.save(product);
+        checkWorker.checkInBackground(product.getId());
+        return ProductResponse.from(product);
     }
 
     @Transactional
@@ -54,58 +50,21 @@ public class ProductService {
         return ProductResponse.from(product);
     }
 
-    @Transactional
-    public ProductResponse check(long id) {
-        Product product = requireProduct(id);
-        checkAndSave(product);
-        return ProductResponse.from(product);
-    }
+    public ProductResponse check(long id) { return checkWorker.checkNow(id); }
 
     @Transactional
     public void delete(long id) {
         products.delete(requireProduct(id));
     }
 
-    @Transactional
-    public void checkActiveProducts() {
-        for (Product product : products.findAllByOrderByCreatedAtDesc()) {
-            if (product.isActive()) checkAndSave(product);
-        }
-    }
-
-    private void checkAndSave(Product product) {
-        String host = hostOf(product.getUrl());
-        log.info("Checking price productId={}, name='{}', host={}", product.getId(), product.getName(), host);
-        try {
-            PriceReading reading = priceReader.read(product.getUrl(), product.getPriceSelector());
-            var previous = product.getSnapshots().isEmpty() ? null : product.getSnapshots().get(0);
-            boolean targetCrossed = product.getTargetPrice() != null && previous != null
-                    && previous.getCurrency().equalsIgnoreCase(reading.currency() == null ? product.getCurrency() : reading.currency())
-                    && previous.getAmount().compareTo(product.getTargetPrice()) > 0
-                    && reading.amount().compareTo(product.getTargetPrice()) <= 0;
-            product.record(new PriceSnapshot(reading.amount(), reading.currency() == null ? product.getCurrency() : reading.currency()));
-            if (reading.imageUrl() != null) product.setImageUrl(reading.imageUrl());
-            products.save(product);
-            log.info("Price check succeeded productId={}, name='{}', price={} {}", product.getId(), product.getName(), reading.amount(), reading.currency() == null ? product.getCurrency() : reading.currency());
-            if (targetCrossed) {
-                pushService.sendTargetReached(product.getName(), product.getUrl(),
-                        reading.currency() == null ? product.getCurrency() : reading.currency(), reading.amount().toPlainString());
-            }
-        } catch (RuntimeException exception) {
-            product.failedCheck(exception.getMessage());
-            products.save(product);
-            log.warn("Price check failed productId={}, name='{}', host={}, reason={}", product.getId(), product.getName(), host, exception.getMessage());
-        }
+    private Product requireProduct(long id) {
+        return products.findWithSnapshotsById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tracked product not found"));
     }
 
     private String hostOf(String value) {
         try { return URI.create(value.trim()).getHost(); }
         catch (RuntimeException exception) { return "unknown"; }
-    }
-
-    private Product requireProduct(long id) {
-        return products.findWithSnapshotsById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tracked product not found"));
     }
 
     private void validatePublicUrl(String value) {

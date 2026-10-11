@@ -8,15 +8,15 @@ import org.springframework.stereotype.Component;
 @Component
 public class PriceCheckScheduler {
     private static final Logger log = LoggerFactory.getLogger(PriceCheckScheduler.class);
-    private final ProductService productService;
+    private final ProductCheckWorker checkWorker;
 
-    public PriceCheckScheduler(ProductService productService) {
-        this.productService = productService;
+    public PriceCheckScheduler(ProductCheckWorker checkWorker) {
+        this.checkWorker = checkWorker;
     }
 
     @Scheduled(fixedDelayString = "${monitor.interval-ms:1800000}", initialDelay = 30000)
     public void refreshPrices() {
-        try { productService.checkActiveProducts(); }
+        try { checkWorker.checkActiveProducts(); }
         catch (Exception exception) { log.warn("Scheduled price refresh did not finish: {}", exception.getMessage()); }
     }
 }

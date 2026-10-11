@@ -14,6 +14,8 @@ export type Product = {
   currency: string;
   currentPrice: number | null;
   lastCheckedAt: string | null;
+  availability?: 'CHECKING' | 'IN_STOCK' | 'OUT_OF_STOCK' | 'UNKNOWN';
+  availabilityCheckedAt?: string | null;
   lastCheckError: string | null;
   active: boolean;
   history: PricePoint[];

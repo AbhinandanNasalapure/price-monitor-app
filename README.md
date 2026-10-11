@@ -1,6 +1,6 @@
 # Price Monitor
 
-A local price-tracking app built with Java 25, Spring Boot, React, TypeScript, PostgreSQL, and Playwright. Add a public product page, save its current price, and keep a price history as the app checks it on a schedule.
+A local price-tracking app built with Java 25, Spring Boot, React, TypeScript, PostgreSQL, and Playwright. Add a public product page, then track its price history and reported stock availability on a schedule.
 
 The first version reads common product metadata, JSON-LD offers, and visible page text. Sites with unusual markup can use a CSS price selector. Retailers can change their pages at any time, so a reading may need a selector adjustment.
 
@@ -80,7 +80,7 @@ Stop the web app and API with `Ctrl+C`. Stop PostgreSQL with `docker compose dow
 ## API overview
 
 - `GET /api/products` — list tracked products and recent price history.
-- `POST /api/products` — add a product and attempt an immediate reading.
+- `POST /api/products` — save a product immediately and start its first price and availability check in the background.
 - `GET /api/products/{id}` — get one product.
 - `PUT /api/products/{id}` — update its name, URL, target, currency, or CSS selector.
 - `POST /api/products/{id}/check` — check its price now.
@@ -89,7 +89,7 @@ Stop the web app and API with `Ctrl+C`. Stop PostgreSQL with `docker compose dow
 - `POST /api/push/subscriptions` / `DELETE /api/push/subscriptions` — register or remove a browser subscription.
 - `POST /api/push/test` — send a test browser notification.
 
-Automatic checks run every 30 minutes by default. Set `MONITOR_INTERVAL_MS` to change the interval. Price alerts trigger only on a downward crossing of the target and only when Web Push is configured and a browser is subscribed.
+Automatic checks run every 30 minutes by default. Set `MONITOR_INTERVAL_MS` to change the interval. Product cards show **In stock**, **Out of stock**, **Checking stock…**, or **Availability unknown**. Availability is independent of price history, so an out-of-stock check does not remove the last successful price. Retailers expose stock differently; when a clear signal is unavailable, the app reports unknown rather than guessing. Price alerts trigger only on a downward crossing of the target and only when Web Push is configured and a browser is subscribed.
 
 ## Chrome price alerts
 

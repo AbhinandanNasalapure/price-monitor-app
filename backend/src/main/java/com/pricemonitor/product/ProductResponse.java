@@ -14,6 +14,8 @@ public record ProductResponse(
         String currency,
         BigDecimal currentPrice,
         Instant lastCheckedAt,
+        Availability availability,
+        Instant availabilityCheckedAt,
         String lastCheckError,
         boolean active,
         List<PricePointResponse> history
@@ -24,7 +26,7 @@ public record ProductResponse(
         return new ProductResponse(
                 product.getId(), product.getName(), product.getUrl(), product.getPriceSelector(), product.getImageUrl(), product.getTargetPrice(),
                 product.getCurrency(), latest == null ? null : latest.getAmount(), product.getLastCheckedAt(),
-                product.getLastCheckError(), product.isActive(),
+                product.getAvailability(), product.getAvailabilityCheckedAt(), product.getLastCheckError(), product.isActive(),
                 snapshots.stream().limit(60).map(PricePointResponse::from).toList()
         );
     }

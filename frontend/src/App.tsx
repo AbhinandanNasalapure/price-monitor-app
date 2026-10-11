@@ -41,6 +41,12 @@ export default function App() {
   useEffect(() => { void refresh(); }, [refresh]);
 
   useEffect(() => {
+    if (!products.some((product) => product.availability === 'CHECKING')) return;
+    const timer = window.setInterval(() => { void refresh(); }, 2000);
+    return () => window.clearInterval(timer);
+  }, [products, refresh]);
+
+  useEffect(() => {
     const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
     setPushSupported(supported);
     if (!supported) return;
@@ -170,7 +176,7 @@ export default function App() {
           <label>Currency<input required minLength={3} maxLength={3} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })} /></label>
           <label className="wide">Price CSS selector <span className="optional">optional · for pages with unusual layouts</span><input maxLength={128} placeholder=".price, [data-testid='price']" value={form.priceSelector} onChange={(e) => setForm({ ...form, priceSelector: e.target.value })} /></label>
         </div>
-        <div className="form-footer"><span>{editingId == null ? 'We’ll check the page now and every 30 minutes.' : 'Your existing price history and check schedule will be kept.'}</span><button className="primary-button" disabled={saving}>{saving ? 'Saving…' : editingId == null ? 'Add to watchlist' : 'Save changes'}</button></div>
+        <div className="form-footer"><span>{editingId == null ? 'We’ll save it immediately, then check price and stock in the background and every 30 minutes.' : 'Your existing price history and check schedule will be kept.'}</span><button className="primary-button" disabled={saving}>{saving ? 'Saving…' : editingId == null ? 'Add to watchlist' : 'Save changes'}</button></div>
       </form>}
 
       {error && <div className="alert" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss">×</button></div>}
@@ -200,6 +206,10 @@ function Stat({ label, value, note, accent = false }: { label: string; value: st
 
 function ProductCard({ product, busy, onCheck, onEdit, onDelete }: { product: Product; busy: boolean; onCheck: (id: number) => void; onEdit: (product: Product) => void; onDelete: (id: number) => void }) {
   const hasProductPage = isDirectProductPage(product.url);
+  const availability = product.availability ?? 'UNKNOWN';
+  const availabilityLabel = availability === 'IN_STOCK' ? 'In stock'
+    : availability === 'OUT_OF_STOCK' ? 'Out of stock'
+      : availability === 'CHECKING' ? 'Checking stock…' : 'Availability unknown';
   const previous = product.history[1]?.amount;
   const trend = previous != null && product.currentPrice != null
     ? product.currentPrice < previous ? 'down' : product.currentPrice > previous ? 'up' : 'steady'
@@ -208,7 +218,7 @@ function ProductCard({ product, busy, onCheck, onEdit, onDelete }: { product: Pr
   return <article className="product-card">
     <div className="product-visual">{product.imageUrl ? <img src={product.imageUrl} alt="" /> : <div className="visual-placeholder">◇</div>}</div>
     <div className="product-main"><div className="product-title-row">{hasProductPage ? <a href={product.url} target="_blank" rel="noreferrer" className="product-title">{product.name}</a> : <button type="button" className="product-title title-edit-action" onClick={() => onEdit(product)} title="Set a direct product page URL before opening">{product.name}</button>}{product.targetPrice != null && <span className="target-chip">Target {currency(product.targetPrice, product.currency)}</span>}</div>
-      <div className="product-url">{hasProductPage ? new URL(product.url).hostname : 'Add a direct product page URL'}</div>
+      <div className="product-link-row"><div className="product-url">{hasProductPage ? new URL(product.url).hostname : 'Add a direct product page URL'}</div><span className={`availability-pill availability-${availability.toLowerCase()}`} title={product.availabilityCheckedAt ? `Last confirmed ${date(product.availabilityCheckedAt)}` : undefined}>{availabilityLabel}</span></div>
       {product.lastCheckError && <div className="product-error">{product.lastCheckError}</div>}
       <div className="product-meta"><span>{product.history.length} checks</span><span className="meta-separator">·</span><span>Last checked {date(product.lastCheckedAt)}</span></div>
     </div>
