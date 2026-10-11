@@ -59,7 +59,7 @@ if ($Role -eq 'Api') {
     Set-Java25
     Set-Location (Join-Path $ProjectRoot 'backend')
     $browserCache = Join-Path $env:LOCALAPPDATA 'ms-playwright'
-    $chromiumFound = Test-Path $browserCache -and
+    $chromiumFound = (Test-Path -LiteralPath $browserCache) -and
         [bool](Get-ChildItem -LiteralPath $browserCache -Directory -Filter 'chromium-*' -ErrorAction SilentlyContinue | Select-Object -First 1)
     if (-not $chromiumFound) {
         Write-Host 'Installing the Playwright Chromium browser (first launch only)...' -ForegroundColor Yellow
