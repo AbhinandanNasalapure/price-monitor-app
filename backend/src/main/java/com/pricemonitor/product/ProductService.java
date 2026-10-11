@@ -2,6 +2,7 @@ package com.pricemonitor.product;
 
 import com.pricemonitor.scrape.PriceReader;
 import com.pricemonitor.scrape.PriceReading;
+import com.pricemonitor.push.PushService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,10 +16,12 @@ import java.util.List;
 public class ProductService {
     private final ProductRepository products;
     private final PriceReader priceReader;
+    private final PushService pushService;
 
-    public ProductService(ProductRepository products, PriceReader priceReader) {
+    public ProductService(ProductRepository products, PriceReader priceReader, PushService pushService) {
         this.products = products;
         this.priceReader = priceReader;
+        this.pushService = pushService;
     }
 
     @Transactional(readOnly = true)
@@ -69,9 +72,18 @@ public class ProductService {
     private void checkAndSave(Product product) {
         try {
             PriceReading reading = priceReader.read(product.getUrl(), product.getPriceSelector());
+            var previous = product.getSnapshots().isEmpty() ? null : product.getSnapshots().get(0);
+            boolean targetCrossed = product.getTargetPrice() != null && previous != null
+                    && previous.getCurrency().equalsIgnoreCase(reading.currency() == null ? product.getCurrency() : reading.currency())
+                    && previous.getAmount().compareTo(product.getTargetPrice()) > 0
+                    && reading.amount().compareTo(product.getTargetPrice()) <= 0;
             product.record(new PriceSnapshot(reading.amount(), reading.currency() == null ? product.getCurrency() : reading.currency()));
             if (reading.imageUrl() != null) product.setImageUrl(reading.imageUrl());
             products.save(product);
+            if (targetCrossed) {
+                pushService.sendTargetReached(product.getName(), product.getUrl(),
+                        reading.currency() == null ? product.getCurrency() : reading.currency(), reading.amount().toPlainString());
+            }
         } catch (RuntimeException exception) {
             product.failedCheck(exception.getMessage());
         }

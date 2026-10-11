@@ -81,8 +81,27 @@ Stop the web app and API with `Ctrl+C`. Stop PostgreSQL with `docker compose dow
 - `PUT /api/products/{id}` — update its name, URL, target, currency, or CSS selector.
 - `POST /api/products/{id}/check` — check its price now.
 - `DELETE /api/products/{id}` — remove it and its history.
+- `GET /api/push/config` — get Web Push setup status and the public VAPID key.
+- `POST /api/push/subscriptions` / `DELETE /api/push/subscriptions` — register or remove a browser subscription.
+- `POST /api/push/test` — send a test browser notification.
 
-Automatic checks run every 30 minutes by default. Set `MONITOR_INTERVAL_MS` to change the interval. Target prices are stored and displayed; notification delivery is not included in this first version.
+Automatic checks run every 30 minutes by default. Set `MONITOR_INTERVAL_MS` to change the interval. Price alerts trigger only on a downward crossing of the target and only when Web Push is configured and a browser is subscribed.
+
+## Chrome price alerts
+
+The app sends Chrome Web Push notifications when a later price check crosses from above a product's target price to at or below it. Add a product with a target price, enable Chrome alerts in the app, and use **Send test** to check delivery. Alerts are sent once per downward crossing; if the price later rises above the target, a future downward crossing can alert again.
+
+Generate a VAPID key pair from the repository root:
+
+```powershell
+npx --yes web-push generate-vapid-keys
+```
+
+Copy the generated public and private keys into `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` in `.env`, and set `VAPID_SUBJECT` to a contact such as `mailto:you@example.com`. Keep the private key only in `.env`; never commit it. Restart the API after changing these values. Then open the app in Chrome, choose **Enable Chrome alerts**, and allow notifications for the site. The browser subscription is saved in the local database.
+
+Web Push requires a secure context. `http://localhost:5173` is treated as secure for development, so it works in Chrome on the computer running the app. A phone cannot use that PC-local origin; to subscribe a phone, deploy the app behind HTTPS or configure a trusted HTTPS development tunnel. Price checks still require the backend and database to be running and the host to be awake.
+
+The browser push subscription API accepts HTTPS endpoints only from Google's Chrome push service. The service worker is served from `frontend/public/sw.js`.
 
 ## Credentials and local boundaries
 

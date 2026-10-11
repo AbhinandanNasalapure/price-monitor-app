@@ -18,6 +18,10 @@ export default function App() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushSupported, setPushSupported] = useState(false);
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     try { setProducts(await api.products()); setError(''); }
@@ -26,6 +30,51 @@ export default function App() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  useEffect(() => {
+    const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    setPushSupported(supported);
+    if (!supported) return;
+    void api.pushConfig().then(async (config) => {
+      setPushEnabled(config.enabled);
+      if (!config.enabled) return;
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      const subscription = await registration.pushManager.getSubscription();
+      setPushSubscribed(subscription != null);
+    }).catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not initialize browser notifications.'));
+  }, []);
+
+  async function togglePush() {
+    if (!pushSupported || !pushEnabled) return;
+    setPushBusy(true); setError('');
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+      if (existing) {
+        await api.removePushSubscription(existing.endpoint);
+        await existing.unsubscribe();
+        setPushSubscribed(false);
+        return;
+      }
+      const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+      if (permission !== 'granted') throw new Error('Allow notifications for this site in Chrome to enable price alerts.');
+      const config = await api.pushConfig();
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: decodeVapidKey(config.publicKey),
+      });
+      await api.savePushSubscription(subscription.toJSON());
+      setPushSubscribed(true);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not update browser notification settings.'); }
+    finally { setPushBusy(false); }
+  }
+
+  async function sendTestPush() {
+    setPushBusy(true); setError('');
+    try { await api.testPush(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not send a test notification.'); }
+    finally { setPushBusy(false); }
+  }
 
   const stats = useMemo(() => {
     const checked = products.filter((product) => product.currentPrice != null);
@@ -62,7 +111,16 @@ export default function App() {
     <main className="shell">
       <header className="topbar">
         <a className="brand" href="/" aria-label="Price Monitor home"><span className="brand-mark">$</span><span>price<span className="brand-light">monitor</span></span></a>
-        <div className="top-actions"><span className="live-dot" /> Local workspace <button className="avatar" aria-label="Account">A</button></div>
+        <div className="top-actions"><span className="live-dot" /> Local workspace
+          {pushSupported && <div className="push-controls">
+            {!pushEnabled ? <span className="push-hint">Set VAPID keys in .env to enable alerts</span> : <>
+              <button className="secondary-button push-button" onClick={togglePush} disabled={pushBusy}>
+                {pushBusy ? 'Please wait…' : pushSubscribed ? 'Disable alerts' : 'Enable Chrome alerts'}
+              </button>
+              {pushSubscribed && <button className="secondary-button push-button" onClick={sendTestPush} disabled={pushBusy}>Send test</button>}
+            </>}
+          </div>}
+          <button className="avatar" aria-label="Account">A</button></div>
       </header>
 
       <section className="hero">
@@ -99,6 +157,15 @@ export default function App() {
       <footer><span>PRICE MONITOR</span><span>Private by default · Runs on your machine</span></footer>
     </main>
   );
+}
+
+function decodeVapidKey(key: string): ArrayBuffer {
+  const padding = '='.repeat((4 - key.length % 4) % 4);
+  const base64 = (key + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = window.atob(base64);
+  const decoded = new Uint8Array(raw.length);
+  for (let index = 0; index < raw.length; index += 1) decoded[index] = raw.charCodeAt(index);
+  return decoded.buffer as ArrayBuffer;
 }
 
 function Stat({ label, value, note, accent = false }: { label: string; value: string; note: string; accent?: boolean }) {

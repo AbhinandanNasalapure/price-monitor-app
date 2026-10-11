@@ -21,4 +21,12 @@ export const api = {
   }),
   check: (id: number) => request<Product>(`/products/${id}/check`, { method: 'POST' }),
   remove: (id: number) => request<void>(`/products/${id}`, { method: 'DELETE' }),
+  pushConfig: () => request<{ enabled: boolean; publicKey: string }>('/push/config'),
+  savePushSubscription: (subscription: PushSubscriptionJSON) => request<void>('/push/subscriptions', {
+    method: 'POST', body: JSON.stringify(subscription),
+  }),
+  removePushSubscription: (endpoint: string) => request<void>('/push/subscriptions', {
+    method: 'DELETE', body: JSON.stringify({ endpoint }),
+  }),
+  testPush: () => request<void>('/push/test', { method: 'POST' }),
 };
