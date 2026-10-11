@@ -37,6 +37,10 @@ On Windows, Playwright installs the browser runtime into the current user’s lo
 
 ## Run locally
 
+On Windows, once Docker Desktop and its WSL 2 engine are ready, double-click `Launch-Price-Monitor.cmd` in the repository root. It checks Java 25, Maven, Node.js, npm, Docker Compose, starts PostgreSQL, installs Chromium if it is missing, opens separate API and frontend terminals, and opens the app in your default browser. The launcher creates a Git-ignored `.env` with a random local database password if one does not already exist. It does not overwrite an existing `.env`.
+
+You can also start the services manually in separate terminals as described below.
+
 Open three terminals from the repository root.
 
 Terminal 1, start PostgreSQL:
