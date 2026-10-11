@@ -30,10 +30,11 @@ public class PriceReader {
             "[itemprop='price'][content]"
     );
     private static final List<String> AMAZON_PRICE_SELECTORS = List.of(
+            "#apex_offerDisplay_desktop .a-price:not(.a-text-price) .a-offscreen",
+            "#apex_offerDisplay_single_desktop .a-price:not(.a-text-price) .a-offscreen",
             "#corePrice_feature_div .a-price:not(.a-text-price) .a-offscreen",
             "#corePriceDisplay_desktop_feature_div .a-price:not(.a-text-price) .a-offscreen",
             "#apex_desktop .a-price:not(.a-text-price) .a-offscreen",
-            "#apex_offerDisplay_desktop .a-price:not(.a-text-price) .a-offscreen",
             "#priceblock_dealprice",
             "#priceblock_ourprice",
             "#priceblock_saleprice",
@@ -66,9 +67,13 @@ public class PriceReader {
 
                 String image = readMeta(page, "meta[property='og:image']", "content");
                 BigDecimal amount = customSelector == null ? null : parseNumber(readSelector(page, customSelector));
-                if (amount == null && isAmazonHost(productUrl)) amount = readFirstPrice(page, AMAZON_PRICE_SELECTORS);
+                boolean amazon = isAmazonHost(productUrl);
+                if (amount == null && amazon) amount = readFirstPrice(page, AMAZON_PRICE_SELECTORS);
+                if (amount == null && amazon) {
+                    throw new IllegalStateException("Amazon did not expose a current buy-box price for this product. No fallback price was used to avoid recording a list price or another page value.");
+                }
                 if (amount == null) amount = readStructuredPrice(page);
-                if (amount == null) {
+                if (amount == null && !amazon) {
                     for (String selector : META_PRICE_SELECTORS) {
                         amount = parseNumber(readMeta(page, selector, "content"));
                         if (amount != null) break;
@@ -76,7 +81,7 @@ public class PriceReader {
                         if (amount != null) break;
                     }
                 }
-                if (amount == null) amount = readVisiblePrice(page);
+                if (amount == null && !amazon) amount = readVisiblePrice(page);
                 if (amount == null || amount.signum() <= 0) {
                     throw new IllegalStateException("No price was found. Try adding a CSS price selector for this page.");
                 }
@@ -176,6 +181,10 @@ public class PriceReader {
     private String readSelector(Page page, String selector) {
         try {
             var locator = page.locator(selector).first();
+            // Playwright's getAttribute/textContent waits up to the default timeout when
+            // a selector has no match. Amazon's layout varies per product, so probe
+            // existence first instead of spending a timeout on every absent selector.
+            if (locator.count() == 0) return null;
             String content = locator.getAttribute("content");
             return content == null ? locator.textContent() : content;
         } catch (RuntimeException ignored) { return null; }
