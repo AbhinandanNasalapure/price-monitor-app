@@ -4,6 +4,8 @@ import com.pricemonitor.scrape.PriceReader;
 import com.pricemonitor.scrape.PriceReading;
 import com.pricemonitor.push.PushService;
 import org.springframework.http.HttpStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -14,6 +16,8 @@ import java.util.List;
 
 @Service
 public class ProductService {
+    private static final Logger log = LoggerFactory.getLogger(ProductService.class);
+
     private final ProductRepository products;
     private final PriceReader priceReader;
     private final PushService pushService;
@@ -34,9 +38,9 @@ public class ProductService {
         return ProductResponse.from(requireProduct(id));
     }
 
-    @Transactional
     public ProductResponse create(ProductRequest request) {
         validatePublicUrl(request.url());
+        log.info("Creating price monitor name='{}', host={}, target={} {}", request.name(), hostOf(request.url()), request.targetPrice(), request.currency());
         Product product = products.save(new Product(request.name(), request.url(), request.targetPrice(), request.currency(), request.priceSelector()));
         checkAndSave(product);
         return ProductResponse.from(products.findWithSnapshotsById(product.getId()).orElse(product));
@@ -70,6 +74,8 @@ public class ProductService {
     }
 
     private void checkAndSave(Product product) {
+        String host = hostOf(product.getUrl());
+        log.info("Checking price productId={}, name='{}', host={}", product.getId(), product.getName(), host);
         try {
             PriceReading reading = priceReader.read(product.getUrl(), product.getPriceSelector());
             var previous = product.getSnapshots().isEmpty() ? null : product.getSnapshots().get(0);
@@ -80,13 +86,21 @@ public class ProductService {
             product.record(new PriceSnapshot(reading.amount(), reading.currency() == null ? product.getCurrency() : reading.currency()));
             if (reading.imageUrl() != null) product.setImageUrl(reading.imageUrl());
             products.save(product);
+            log.info("Price check succeeded productId={}, name='{}', price={} {}", product.getId(), product.getName(), reading.amount(), reading.currency() == null ? product.getCurrency() : reading.currency());
             if (targetCrossed) {
                 pushService.sendTargetReached(product.getName(), product.getUrl(),
                         reading.currency() == null ? product.getCurrency() : reading.currency(), reading.amount().toPlainString());
             }
         } catch (RuntimeException exception) {
             product.failedCheck(exception.getMessage());
+            products.save(product);
+            log.warn("Price check failed productId={}, name='{}', host={}, reason={}", product.getId(), product.getName(), host, exception.getMessage());
         }
+    }
+
+    private String hostOf(String value) {
+        try { return URI.create(value.trim()).getHost(); }
+        catch (RuntimeException exception) { return "unknown"; }
     }
 
     private Product requireProduct(long id) {

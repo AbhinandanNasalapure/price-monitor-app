@@ -7,6 +7,7 @@ import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.Route;
+import com.microsoft.playwright.Response;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -44,7 +45,10 @@ public class PriceReader {
                 Page page = browser.newPage();
                 page.setDefaultNavigationTimeout(timeoutMs);
                 page.route("**/*", route -> guardRequest(route));
-                page.navigate(productUrl, new Page.NavigateOptions().setWaitUntil(com.microsoft.playwright.options.WaitUntilState.DOMCONTENTLOADED));
+                Response response = page.navigate(productUrl, new Page.NavigateOptions().setWaitUntil(com.microsoft.playwright.options.WaitUntilState.DOMCONTENTLOADED));
+                if (response != null && response.status() >= 400) {
+                    throw new IllegalStateException("Product page returned HTTP " + response.status() + ".");
+                }
 
                 String image = readMeta(page, "meta[property='og:image']", "content");
                 BigDecimal amount = customSelector == null ? null : parseNumber(readSelector(page, customSelector));
