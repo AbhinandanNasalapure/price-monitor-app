@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+.idea/
+*.iml
+target/
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+*.log
+Thumbs.db
