@@ -3,7 +3,10 @@ param(
     [string]$Role = 'Launcher'
 )
 
-$ErrorActionPreference = 'Stop'
+# Native tools such as Maven may write harmless compatibility warnings to stderr.
+# Their exit codes are checked explicitly below, so don't turn those warnings into
+# terminating PowerShell errors.
+$ErrorActionPreference = 'Continue'
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Write-Failure([string]$Message) {
