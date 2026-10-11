@@ -13,6 +13,7 @@ const date = (value: string | null) => value
 export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -83,12 +84,29 @@ export default function App() {
     return { tracked: products.length, checked: checked.length, dropped };
   }, [products]);
 
-  async function addProduct(event: FormEvent<HTMLFormElement>) {
+  function closeForm() {
+    setShowForm(false); setEditingId(null); setForm(emptyForm); setError('');
+  }
+
+  function editProduct(product: Product) {
+    setEditingId(product.id);
+    setForm({ name: product.name, url: product.url, targetPrice: product.targetPrice?.toString() ?? '', currency: product.currency, priceSelector: product.priceSelector ?? '' });
+    setShowForm(true); setError('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function saveProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setError('');
     try {
-      const created = await api.create(form);
-      setProducts((current) => [created, ...current]); setForm(emptyForm); setShowForm(false);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not add this product.'); }
+      if (editingId != null) {
+        const updated = await api.update(editingId, form);
+        setProducts((current) => current.map((product) => product.id === editingId ? updated : product));
+      } else {
+        const created = await api.create(form);
+        setProducts((current) => [created, ...current]);
+      }
+      closeForm();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : `Could not ${editingId == null ? 'add' : 'update'} this product.`); }
     finally { setSaving(false); }
   }
 
@@ -126,7 +144,7 @@ export default function App() {
       <section className="hero">
         <div><div className="eyebrow">YOUR WATCHLIST</div><h1>Make every price<br /><span>drop count.</span></h1>
           <p>One calm place to follow the products you want.</p></div>
-        <button className="primary-button" onClick={() => setShowForm((open) => !open)}><span className="plus">+</span> Track a product</button>
+        <button className="primary-button" onClick={() => { if (showForm) closeForm(); else { setEditingId(null); setForm(emptyForm); setShowForm(true); } }}><span className="plus">+</span> Track a product</button>
       </section>
 
       <section className="stat-grid" aria-label="Watchlist overview">
@@ -135,8 +153,8 @@ export default function App() {
         <Stat label="PRICE DROPS" value={stats.dropped.toString().padStart(2, '0')} note="Since the last check" accent />
       </section>
 
-      {showForm && <form className="add-card" onSubmit={addProduct}>
-        <div className="form-heading"><div><div className="eyebrow">NEW TRACKER</div><h2>Add a product</h2></div><button type="button" className="icon-button" onClick={() => setShowForm(false)} aria-label="Close">×</button></div>
+      {showForm && <form className="add-card" onSubmit={saveProduct}>
+        <div className="form-heading"><div><div className="eyebrow">{editingId == null ? 'NEW TRACKER' : 'UPDATE TRACKER'}</div><h2>{editingId == null ? 'Add a product' : 'Edit product'}</h2></div><button type="button" className="icon-button" onClick={closeForm} aria-label="Close">×</button></div>
         <div className="form-grid">
           <label>Product name<input required maxLength={160} placeholder="e.g. Wireless headphones" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
           <label>Product page URL<input required type="url" placeholder="https://store.example/product" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} /></label>
@@ -144,7 +162,7 @@ export default function App() {
           <label>Currency<input required minLength={3} maxLength={3} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })} /></label>
           <label className="wide">Price CSS selector <span className="optional">optional · for pages with unusual layouts</span><input maxLength={128} placeholder=".price, [data-testid='price']" value={form.priceSelector} onChange={(e) => setForm({ ...form, priceSelector: e.target.value })} /></label>
         </div>
-        <div className="form-footer"><span>We’ll check the page now and every 30 minutes.</span><button className="primary-button" disabled={saving}>{saving ? 'Checking…' : 'Add to watchlist'}</button></div>
+        <div className="form-footer"><span>{editingId == null ? 'We’ll check the page now and every 30 minutes.' : 'Your existing price history and check schedule will be kept.'}</span><button className="primary-button" disabled={saving}>{saving ? 'Saving…' : editingId == null ? 'Add to watchlist' : 'Save changes'}</button></div>
       </form>}
 
       {error && <div className="alert" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss">×</button></div>}
@@ -152,7 +170,7 @@ export default function App() {
       <section className="watchlist">
         <div className="section-heading"><div><div className="eyebrow">THE LINEUP</div><h2>Your watchlist</h2></div><span className="count-pill">{products.length} {products.length === 1 ? 'item' : 'items'}</span></div>
         {loading ? <div className="empty-state">Loading your watchlist…</div> : products.length === 0 ? <div className="empty-state"><div className="empty-icon">↘</div><h3>Your watchlist is a blank slate.</h3><p>Add a product URL and we’ll start keeping an eye on its price.</p><button className="secondary-button" onClick={() => setShowForm(true)}>Add your first product</button></div> :
-          <div className="product-list">{products.map((product) => <ProductCard key={product.id} product={product} busy={busyId === product.id} onCheck={checkProduct} onDelete={deleteProduct} />)}</div>}
+          <div className="product-list">{products.map((product) => <ProductCard key={product.id} product={product} busy={busyId === product.id} onCheck={checkProduct} onEdit={editProduct} onDelete={deleteProduct} />)}</div>}
       </section>
       <footer><span>PRICE MONITOR</span><span>Private by default · Runs on your machine</span></footer>
     </main>
@@ -172,7 +190,7 @@ function Stat({ label, value, note, accent = false }: { label: string; value: st
   return <article className={`stat-card${accent ? ' stat-accent' : ''}`}><div className="eyebrow">{label}</div><div className="stat-value">{value}</div><div className="stat-note">{note}</div></article>;
 }
 
-function ProductCard({ product, busy, onCheck, onDelete }: { product: Product; busy: boolean; onCheck: (id: number) => void; onDelete: (id: number) => void }) {
+function ProductCard({ product, busy, onCheck, onEdit, onDelete }: { product: Product; busy: boolean; onCheck: (id: number) => void; onEdit: (product: Product) => void; onDelete: (id: number) => void }) {
   const previous = product.history[1]?.amount;
   const trend = previous != null && product.currentPrice != null
     ? product.currentPrice < previous ? 'down' : product.currentPrice > previous ? 'up' : 'steady'
@@ -187,6 +205,6 @@ function ProductCard({ product, busy, onCheck, onDelete }: { product: Product; b
     </div>
     <div className="product-price"><div className="eyebrow">CURRENT PRICE</div><div className="price-value">{currency(product.currentPrice, product.currency)}</div>
       <div className={`trend trend-${trend}`}>{trend === 'down' ? '↘' : trend === 'up' ? '↗' : trend === 'steady' ? '→' : '•'} {change == null ? 'Awaiting first reading' : `${currency(change, product.currency)} since previous check`}</div></div>
-    <div className="product-actions"><button className="icon-button" onClick={() => onCheck(product.id)} disabled={busy} title="Check price now" aria-label="Check price now">{busy ? '…' : '↻'}</button><button className="icon-button delete-button" onClick={() => onDelete(product.id)} title="Remove product" aria-label="Remove product">×</button></div>
+    <div className="product-actions"><button className="icon-button" onClick={() => onCheck(product.id)} disabled={busy} title="Check price now" aria-label="Check price now">{busy ? '…' : '↻'}</button><button className="icon-button edit-button" onClick={() => onEdit(product)} title="Edit product" aria-label={`Edit ${product.name}`}>✎</button><button className="icon-button delete-button" onClick={() => onDelete(product.id)} title="Remove product" aria-label="Remove product">×</button></div>
   </article>;
 }

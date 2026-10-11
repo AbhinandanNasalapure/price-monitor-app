@@ -9,6 +9,7 @@ export type Product = {
   name: string;
   url: string;
   imageUrl: string | null;
+  priceSelector: string | null;
   targetPrice: number | null;
   currency: string;
   currentPrice: number | null;

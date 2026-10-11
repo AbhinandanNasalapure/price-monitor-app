@@ -19,6 +19,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ ...product, targetPrice: product.targetPrice || null }),
   }),
+  update: (id: number, product: ProductInput) => request<Product>(`/products/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ ...product, targetPrice: product.targetPrice || null }),
+  }),
   check: (id: number) => request<Product>(`/products/${id}/check`, { method: 'POST' }),
   remove: (id: number) => request<void>(`/products/${id}`, { method: 'DELETE' }),
   pushConfig: () => request<{ enabled: boolean; publicKey: string }>('/push/config'),

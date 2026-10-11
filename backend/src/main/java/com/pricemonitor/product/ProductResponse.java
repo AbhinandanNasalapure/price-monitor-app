@@ -8,6 +8,7 @@ public record ProductResponse(
         Long id,
         String name,
         String url,
+        String priceSelector,
         String imageUrl,
         BigDecimal targetPrice,
         String currency,
@@ -21,7 +22,7 @@ public record ProductResponse(
         List<PriceSnapshot> snapshots = product.getSnapshots();
         PriceSnapshot latest = snapshots.stream().findFirst().orElse(null);
         return new ProductResponse(
-                product.getId(), product.getName(), product.getUrl(), product.getImageUrl(), product.getTargetPrice(),
+                product.getId(), product.getName(), product.getUrl(), product.getPriceSelector(), product.getImageUrl(), product.getTargetPrice(),
                 product.getCurrency(), latest == null ? null : latest.getAmount(), product.getLastCheckedAt(),
                 product.getLastCheckError(), product.isActive(),
                 snapshots.stream().limit(60).map(PricePointResponse::from).toList()
