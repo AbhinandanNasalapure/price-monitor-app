@@ -119,6 +119,10 @@ if ([version]$nodeVersion -lt [version]'20.19.0') { Write-Failure "Node.js $node
 Write-Host "Node.js v$nodeVersion; npm $(& npm --version)" -ForegroundColor Green
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    $dockerCli = Join-Path $env:ProgramFiles 'Docker\Docker\resources\bin'
+    if (Test-Path (Join-Path $dockerCli 'docker.exe')) { $env:Path = "$dockerCli;$env:Path" }
+}
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Write-Failure 'Docker CLI is not installed or is not on PATH. Finish Docker Desktop and WSL 2 setup, open a fresh terminal, then double-click this launcher again.'
 }
 $composeInfo = (& docker compose version 2>&1 | Out-String).Trim()
