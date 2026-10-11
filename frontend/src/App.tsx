@@ -9,6 +9,14 @@ const currency = (amount: number | null, code: string) => amount == null
 const date = (value: string | null) => value
   ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
   : 'Not checked yet';
+const isDirectProductPage = (value: string) => {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    if (host.startsWith('amazon.') || host.includes('.amazon.')) return /\/(?:dp|gp\/product)\/[a-z0-9]{10}(?:\/|$)/i.test(url.pathname);
+    return url.pathname !== '/' && url.pathname !== '';
+  } catch { return false; }
+};
 
 export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -191,6 +199,7 @@ function Stat({ label, value, note, accent = false }: { label: string; value: st
 }
 
 function ProductCard({ product, busy, onCheck, onEdit, onDelete }: { product: Product; busy: boolean; onCheck: (id: number) => void; onEdit: (product: Product) => void; onDelete: (id: number) => void }) {
+  const hasProductPage = isDirectProductPage(product.url);
   const previous = product.history[1]?.amount;
   const trend = previous != null && product.currentPrice != null
     ? product.currentPrice < previous ? 'down' : product.currentPrice > previous ? 'up' : 'steady'
@@ -198,8 +207,8 @@ function ProductCard({ product, busy, onCheck, onEdit, onDelete }: { product: Pr
   const change = previous != null && product.currentPrice != null ? Math.abs(product.currentPrice - previous) : null;
   return <article className="product-card">
     <div className="product-visual">{product.imageUrl ? <img src={product.imageUrl} alt="" /> : <div className="visual-placeholder">◇</div>}</div>
-    <div className="product-main"><div className="product-title-row"><a href={product.url} target="_blank" rel="noreferrer" className="product-title">{product.name}</a>{product.targetPrice != null && <span className="target-chip">Target {currency(product.targetPrice, product.currency)}</span>}</div>
-      <div className="product-url">{new URL(product.url).hostname}</div>
+    <div className="product-main"><div className="product-title-row">{hasProductPage ? <a href={product.url} target="_blank" rel="noreferrer" className="product-title">{product.name}</a> : <button type="button" className="product-title title-edit-action" onClick={() => onEdit(product)} title="Set a direct product page URL before opening">{product.name}</button>}{product.targetPrice != null && <span className="target-chip">Target {currency(product.targetPrice, product.currency)}</span>}</div>
+      <div className="product-url">{hasProductPage ? new URL(product.url).hostname : 'Add a direct product page URL'}</div>
       {product.lastCheckError && <div className="product-error">{product.lastCheckError}</div>}
       <div className="product-meta"><span>{product.history.length} checks</span><span className="meta-separator">·</span><span>Last checked {date(product.lastCheckedAt)}</span></div>
     </div>

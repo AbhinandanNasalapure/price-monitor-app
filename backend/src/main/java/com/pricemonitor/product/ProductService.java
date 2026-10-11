@@ -116,6 +116,12 @@ public class ProductService {
             if (scheme == null || host == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https")) || uri.getUserInfo() != null) {
                 throw new IllegalArgumentException("Use a public http or https product URL without embedded credentials.");
             }
+            String normalizedHost = host.toLowerCase(java.util.Locale.ROOT);
+            String path = uri.getPath();
+            boolean amazonHost = normalizedHost.startsWith("amazon.") || normalizedHost.contains(".amazon.");
+            if (amazonHost && (path == null || !path.matches("(?i).*/(?:dp|gp/product)/[A-Z0-9]{10}(?:/.*)?$"))) {
+                throw new IllegalArgumentException("Use the direct Amazon product page URL containing /dp/ and the product ASIN, not the Amazon home or search page.");
+            }
             InetAddress[] addresses = InetAddress.getAllByName(host);
             for (InetAddress address : addresses) {
                 if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()

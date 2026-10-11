@@ -29,6 +29,17 @@ public class PriceReader {
             "meta[itemprop='price']",
             "[itemprop='price'][content]"
     );
+    private static final List<String> AMAZON_PRICE_SELECTORS = List.of(
+            "#corePrice_feature_div .a-price:not(.a-text-price) .a-offscreen",
+            "#corePriceDisplay_desktop_feature_div .a-price:not(.a-text-price) .a-offscreen",
+            "#apex_desktop .a-price:not(.a-text-price) .a-offscreen",
+            "#apex_offerDisplay_desktop .a-price:not(.a-text-price) .a-offscreen",
+            "#priceblock_dealprice",
+            "#priceblock_ourprice",
+            "#priceblock_saleprice",
+            "#price_inside_buybox",
+            "#newBuyBoxPrice"
+    );
 
     private final ObjectMapper objectMapper;
     private final int timeoutMs;
@@ -39,6 +50,9 @@ public class PriceReader {
     }
 
     public PriceReading read(String productUrl, String customSelector) {
+        if (isAmazonHost(productUrl) && !isAmazonProductPage(productUrl)) {
+            throw new IllegalStateException("Use the direct Amazon product page URL (it must contain /dp/ and the product ASIN), not the Amazon home or search page.");
+        }
         try (Playwright playwright = Playwright.create()) {
             Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
             try {
@@ -52,6 +66,7 @@ public class PriceReader {
 
                 String image = readMeta(page, "meta[property='og:image']", "content");
                 BigDecimal amount = customSelector == null ? null : parseNumber(readSelector(page, customSelector));
+                if (amount == null && isAmazonHost(productUrl)) amount = readFirstPrice(page, AMAZON_PRICE_SELECTORS);
                 if (amount == null) amount = readStructuredPrice(page);
                 if (amount == null) {
                     for (String selector : META_PRICE_SELECTORS) {
@@ -175,6 +190,34 @@ public class PriceReader {
             if (value != null && value.signum() > 0) return value;
         }
         return null;
+    }
+
+    private BigDecimal readFirstPrice(Page page, List<String> selectors) {
+        for (String selector : selectors) {
+            BigDecimal amount = parseNumber(readSelector(page, selector));
+            if (amount != null && amount.signum() > 0) return amount;
+        }
+        return null;
+    }
+
+    private boolean isAmazonHost(String productUrl) {
+        try {
+            String host = URI.create(productUrl).getHost();
+            if (host == null) return false;
+            host = host.toLowerCase(Locale.ROOT);
+            return host.startsWith("amazon.") || host.contains(".amazon.");
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private boolean isAmazonProductPage(String productUrl) {
+        try {
+            String path = URI.create(productUrl).getPath();
+            return path != null && path.matches("(?i).*/(?:dp|gp/product)/[A-Z0-9]{10}(?:/.*)?$");
+        } catch (RuntimeException ignored) {
+            return false;
+        }
     }
 
     private String readCurrency(Page page) {
