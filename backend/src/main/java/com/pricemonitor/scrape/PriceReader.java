@@ -88,10 +88,10 @@ public class PriceReader {
                     throw new IllegalStateException("Product page returned HTTP " + response.status() + ".");
                 }
 
-                String image = readMeta(page, "meta[property='og:image']", "content");
-                Availability availability = readAvailability(page);
                 boolean amazon = isAmazonHost(productUrl);
                 boolean flipkart = isFlipkartHost(productUrl);
+                String image = readMeta(page, "meta[property='og:image']", "content");
+                Availability availability = readAvailability(page, flipkart);
                 // Amazon often renders several amounts on the same page (for example,
                 // crossed-out list prices and other offers). Always prefer its current
                 // buy-box price over a user-supplied, potentially broad CSS selector.
@@ -100,13 +100,7 @@ public class PriceReader {
                 if (amount == null && !amazon && customSelector != null) {
                     amount = parseNumber(readSelector(page, customSelector));
                 }
-                if (amount == null && availability != Availability.UNKNOWN) {
-                    return new PriceReading(null, readCurrency(page), image, availability);
-                }
-                if (amount == null && amazon) {
-                    throw new IllegalStateException("Amazon did not expose a current buy-box price for this product. No fallback price was used to avoid recording a list price or another page value.");
-                }
-                if (amount == null) amount = readStructuredPrice(page);
+                if (amount == null && !amazon) amount = readStructuredPrice(page);
                 if (amount == null && !amazon) {
                     for (String selector : META_PRICE_SELECTORS) {
                         amount = parseNumber(readMeta(page, selector, "content"));
@@ -114,6 +108,12 @@ public class PriceReader {
                         amount = parseNumber(readSelector(page, selector));
                         if (amount != null) break;
                     }
+                }
+                if (amount == null && availability != Availability.UNKNOWN) {
+                    return new PriceReading(null, readCurrency(page), image, availability);
+                }
+                if (amount == null && amazon) {
+                    throw new IllegalStateException("Amazon did not expose a current buy-box price for this product. No fallback price was used to avoid recording a list price or another page value.");
                 }
                 if (amount == null && !amazon && !flipkart) amount = readVisiblePrice(page);
                 if (amount == null || amount.signum() <= 0) {
@@ -270,7 +270,30 @@ public class PriceReader {
         return null;
     }
 
-    private Availability readAvailability(Page page) {
+    private Availability readAvailability(Page page, boolean flipkart) {
+        if (flipkart) {
+            Availability structured = readStructuredAvailability(page);
+            if (structured != Availability.UNKNOWN) return structured;
+
+            // Flipkart can render "Not available at this Pincode" for exchange
+            // or delivery extras even while the product itself is in stock. Look
+            // for explicit product stock text or a purchase action in the main
+            // product section instead of classifying every "not available" phrase.
+            try {
+                String body = page.locator("body").innerText().toLowerCase(Locale.ROOT);
+                String productSection = body.substring(0, Math.min(body.length(), 5000));
+                if (productSection.contains("currently out of stock") || productSection.contains("out of stock")
+                        || productSection.contains("sold out") || productSection.contains("currently unavailable")) {
+                    return Availability.OUT_OF_STOCK;
+                }
+                if (productSection.contains("buy now") || productSection.contains("add to cart")) {
+                    return Availability.IN_STOCK;
+                }
+            } catch (RuntimeException ignored) {
+                return Availability.UNKNOWN;
+            }
+            return Availability.UNKNOWN;
+        }
         for (String selector : AVAILABILITY_SELECTORS) {
             Availability found = classifyAvailability(readSelector(page, selector));
             if (found != Availability.UNKNOWN) return found;
@@ -283,11 +306,67 @@ public class PriceReader {
         }
     }
 
+    private Availability readStructuredAvailability(Page page) {
+        for (String json : page.locator("script[type='application/ld+json']").allTextContents()) {
+            try {
+                Availability found = findOfferAvailability(objectMapper.readTree(json));
+                if (found != Availability.UNKNOWN) return found;
+            } catch (Exception ignored) {
+                // Ignore malformed structured data and inspect the next block.
+            }
+        }
+        return Availability.UNKNOWN;
+    }
+
+    private Availability readOfferAvailability(JsonNode offers) {
+        if (offers == null) return Availability.UNKNOWN;
+        if (offers.isArray()) {
+            for (JsonNode offer : offers) {
+                Availability found = readOfferAvailability(offer);
+                if (found != Availability.UNKNOWN) return found;
+            }
+            return Availability.UNKNOWN;
+        }
+        if (!offers.isObject()) return Availability.UNKNOWN;
+        JsonNode availability = offers.get("availability");
+        if (availability == null) return Availability.UNKNOWN;
+        String value = availability.asText().toLowerCase(Locale.ROOT);
+        if (value.endsWith("/instock") || value.endsWith("/limitedavailability")) return Availability.IN_STOCK;
+        if (value.endsWith("/outofstock") || value.endsWith("/soldout") || value.endsWith("/discontinued")) {
+            return Availability.OUT_OF_STOCK;
+        }
+        return Availability.UNKNOWN;
+    }
+
+    private Availability findOfferAvailability(JsonNode node) {
+        if (node == null) return Availability.UNKNOWN;
+        if (node.isArray()) {
+            for (JsonNode child : node) {
+                Availability found = findOfferAvailability(child);
+                if (found != Availability.UNKNOWN) return found;
+            }
+            return Availability.UNKNOWN;
+        }
+        if (node.isObject()) {
+            JsonNode offers = node.get("offers");
+            if (offers != null) {
+                Availability found = readOfferAvailability(offers);
+                if (found != Availability.UNKNOWN) return found;
+            }
+            Iterator<java.util.Map.Entry<String, JsonNode>> properties = node.properties().iterator();
+            while (properties.hasNext()) {
+                Availability found = findOfferAvailability(properties.next().getValue());
+                if (found != Availability.UNKNOWN) return found;
+            }
+        }
+        return Availability.UNKNOWN;
+    }
+
     private Availability classifyAvailability(String text) {
         if (text == null || text.isBlank()) return Availability.UNKNOWN;
         String normalized = text.toLowerCase(Locale.ROOT);
         if (normalized.contains("currently unavailable") || normalized.contains("out of stock")
-                || normalized.contains("sold out") || normalized.contains("not available")
+                || normalized.contains("sold out") || normalized.contains("currently not available")
                 || normalized.contains("temporarily unavailable")) return Availability.OUT_OF_STOCK;
         if (normalized.contains("in stock") || normalized.contains("available for delivery")
                 || normalized.contains("available now") || normalized.contains("add to basket")
