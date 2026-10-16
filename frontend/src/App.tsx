@@ -193,7 +193,7 @@ export default function App() {
           <label>Currency<input required minLength={3} maxLength={3} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })} /></label>
           <label className="wide">Price CSS selector <span className="optional">optional · for pages with unusual layouts</span><input maxLength={128} placeholder=".price, [data-testid='price']" value={form.priceSelector} onChange={(e) => setForm({ ...form, priceSelector: e.target.value })} /></label>
         </div>
-        <div className="form-footer"><span>{editingId == null ? 'We’ll save it immediately, then check price and stock in the background and every 30 minutes.' : 'Your existing price history and check schedule will be kept.'}</span><button className="primary-button" disabled={saving}>{saving ? 'Saving…' : editingId == null ? 'Add to watchlist' : 'Save changes'}</button></div>
+        <div className="form-footer"><span>{editingId == null ? 'We’ll save it immediately, then check price and stock in the background every hour.' : 'Your existing price history and check schedule will be kept.'}</span><button className="primary-button" disabled={saving}>{saving ? 'Saving…' : editingId == null ? 'Add to watchlist' : 'Save changes'}</button></div>
       </form>}
 
       {error && <div className="alert" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss">×</button></div>}

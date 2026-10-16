@@ -89,7 +89,7 @@ Stop the web app and API with `Ctrl+C`. Stop PostgreSQL with `docker compose dow
 - `POST /api/push/subscriptions` / `DELETE /api/push/subscriptions` — register or remove a browser subscription.
 - `POST /api/push/test` — send a test browser notification.
 
-Automatic checks run every 30 minutes by default. Set `MONITOR_INTERVAL_MS` to change the interval. Product cards show **In stock**, **Out of stock**, **Checking stock…**, or **Availability unknown**. Availability is independent of price history, so an out-of-stock check does not remove the last successful price. Retailers expose stock differently; when a clear signal is unavailable, the app reports unknown rather than guessing. Price alerts trigger only on a downward crossing of the target and only when Web Push is configured and a browser is subscribed.
+Automatic checks run every hour by default. Set `MONITOR_INTERVAL_MS` (in milliseconds) to change the interval. Product cards show **In stock**, **Out of stock**, **Checking stock…**, or **Availability unknown**. Availability is independent of price history, so an out-of-stock check does not remove the last successful price. Retailers expose stock differently; when a clear signal is unavailable, the app reports unknown rather than guessing. Price alerts trigger only on a downward crossing of the target and only when Web Push is configured and a browser is subscribed.
 
 ## Chrome price alerts
 
