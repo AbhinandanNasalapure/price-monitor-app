@@ -42,6 +42,17 @@ public class PriceReader {
             "#price_inside_buybox",
             "#newBuyBoxPrice"
     );
+    // Flipkart uses short-lived class names, so keep both current and older
+    // product-page price containers. Deliberately avoid scanning arbitrary body
+    // numbers on Flipkart (that can capture EMI amounts, fees, or specifications).
+    private static final List<String> FLIPKART_PRICE_SELECTORS = List.of(
+            "div.Nx9bqj.CxhGGd",
+            "div.Nx9bqj",
+            "div._30jeq3._16Jk6d",
+            "div._30jeq3",
+            "[itemprop='price'][content]",
+            "[itemprop='price']"
+    );
     private static final List<String> AVAILABILITY_SELECTORS = List.of(
             "#availability",
             "#outOfStock",
@@ -79,9 +90,16 @@ public class PriceReader {
 
                 String image = readMeta(page, "meta[property='og:image']", "content");
                 Availability availability = readAvailability(page);
-                BigDecimal amount = customSelector == null ? null : parseNumber(readSelector(page, customSelector));
                 boolean amazon = isAmazonHost(productUrl);
-                if (amount == null && amazon) amount = readFirstPrice(page, AMAZON_PRICE_SELECTORS);
+                boolean flipkart = isFlipkartHost(productUrl);
+                // Amazon often renders several amounts on the same page (for example,
+                // crossed-out list prices and other offers). Always prefer its current
+                // buy-box price over a user-supplied, potentially broad CSS selector.
+                BigDecimal amount = amazon ? readAmazonBuyBoxPrice(page) : null;
+                if (amount == null && flipkart) amount = readFlipkartPrice(page);
+                if (amount == null && !amazon && customSelector != null) {
+                    amount = parseNumber(readSelector(page, customSelector));
+                }
                 if (amount == null && availability != Availability.UNKNOWN) {
                     return new PriceReading(null, readCurrency(page), image, availability);
                 }
@@ -97,8 +115,11 @@ public class PriceReader {
                         if (amount != null) break;
                     }
                 }
-                if (amount == null && !amazon) amount = readVisiblePrice(page);
+                if (amount == null && !amazon && !flipkart) amount = readVisiblePrice(page);
                 if (amount == null || amount.signum() <= 0) {
+                    if (flipkart) {
+                        throw new IllegalStateException("Flipkart did not expose a current product price. It may be showing a bot check or location prompt; no unrelated page number was recorded.");
+                    }
                     throw new IllegalStateException("No price was found. Try adding a CSS price selector for this page.");
                 }
                 String currency = readCurrency(page);
@@ -225,6 +246,30 @@ public class PriceReader {
         return null;
     }
 
+    private BigDecimal readAmazonBuyBoxPrice(Page page) {
+        // Amazon hydrates the buy box after DOMContentLoaded on some product pages.
+        // Poll briefly so a manual check reads the refreshed price rather than the
+        // initial HTML before the client-side offer data has appeared.
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(8);
+        do {
+            BigDecimal amount = readFirstPrice(page, AMAZON_PRICE_SELECTORS);
+            if (amount != null && amount.signum() > 0) return amount;
+            page.waitForTimeout(400);
+        } while (System.nanoTime() < deadline);
+        return null;
+    }
+
+    private BigDecimal readFlipkartPrice(Page page) {
+        // Flipkart fills the product detail after the initial document response.
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(8);
+        do {
+            BigDecimal amount = readFirstPrice(page, FLIPKART_PRICE_SELECTORS);
+            if (amount != null && amount.signum() > 0) return amount;
+            page.waitForTimeout(400);
+        } while (System.nanoTime() < deadline);
+        return null;
+    }
+
     private Availability readAvailability(Page page) {
         for (String selector : AVAILABILITY_SELECTORS) {
             Availability found = classifyAvailability(readSelector(page, selector));
@@ -256,6 +301,16 @@ public class PriceReader {
             if (host == null) return false;
             host = host.toLowerCase(Locale.ROOT);
             return host.startsWith("amazon.") || host.contains(".amazon.");
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private boolean isFlipkartHost(String productUrl) {
+        try {
+            String host = URI.create(productUrl).getHost();
+            return host != null && (host.equalsIgnoreCase("flipkart.com")
+                    || host.toLowerCase(Locale.ROOT).endsWith(".flipkart.com"));
         } catch (RuntimeException ignored) {
             return false;
         }
