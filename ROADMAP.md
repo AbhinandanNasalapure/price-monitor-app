@@ -17,6 +17,19 @@ Let a user track a product from a public product page and see how its price chan
 - [x] Keep product-specific price history for comparison between checks.
 - [x] Avoid replacing the last successful price when a check fails.
 
+## Feature 2 — Three-month price history
+
+**Status: Complete**
+
+Show each product's recent price history in an expandable chart that is easy to scan and remains useful when readings are sparse.
+
+### Completion checklist
+
+- [x] Return price readings from the last 90 days, ordered newest first, while keeping the latest saved price accurate.
+- [x] Show an expandable price chart with dates and lowest, highest, and latest prices.
+- [x] Explain the empty and single-reading states.
+- [x] Make the chart fit the product card on desktop and mobile layouts.
+
 ## Upcoming work
 
 Choose one item at a time and add its acceptance criteria here before implementation.
